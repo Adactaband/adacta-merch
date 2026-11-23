@@ -24,6 +24,16 @@
  */
 
 var DEFAULT_IMPORT_FROM = '2026-09-15';
+// Google Form « Adacta Merch Order » (propriété FORM_ID pour en changer)
+var DEFAULT_FORM_ID = '1YxQzbESLF-PS7lLEy__SVM7D0cHOof2_4obaQJNwWXE';
+
+/** Le Google Form : par son identifiant (propriété FORM_ID), sinon celui lié à la Sheet. */
+function form_(ss) {
+  var id = props_().getProperty('FORM_ID') || DEFAULT_FORM_ID;
+  if (id) return FormApp.openById(id);
+  ss = ss || SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
+  return FormApp.openByUrl(ss.getFormUrl());
+}
 
 // ---------------------------------------------------------------------
 // Lecture des colonnes du formulaire (fonctions pures, testées hors Google)
@@ -207,10 +217,8 @@ function buildCatalog(rows, formItems, now) {
 /** Articles du Google Form lié au Sheet (si le compte y a accès). */
 function readFormItems_(ss) {
   try {
-    var url = ss.getFormUrl();
-    if (!url) return null;
     var out = {};
-    FormApp.openByUrl(url).getItems().forEach(function (item) {
+    form_(ss).getItems().forEach(function (item) {
       var p = parseProductHeader(item.getTitle());
       if (p.eur == null) return;
       var T = FormApp.ItemType, type = item.getType(), choices = [];
@@ -319,9 +327,7 @@ function formChoiceInfo_(item) {
 /** Aperçu (apply = false) ou publication (apply = true) du Katalóg dans le Google Form. */
 function publishForm_(apply) {
   var ss = SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
-  var url = ss.getFormUrl();
-  if (!url) throw new Error('Aucun Google Form lié au Sheet');
-  var form = FormApp.openByUrl(url);                      // demande les droits d'éditeur du formulaire
+  var form = form_(ss);                                    // demande les droits d'éditeur du formulaire
   var byId = {}, items = [];
   form.getItems().forEach(function (item) {
     var title = item.getTitle();
@@ -359,7 +365,7 @@ function publishForm_(apply) {
 /** Liens du Google Form (réponse et modification), affichés dans le Katalóg du site. */
 function saveFormLinks_(ss) {
   try {
-    var form = FormApp.openByUrl(ss.getFormUrl());
+    var form = form_(ss);
     var value = { view_url: form.getPublishedUrl(), edit_url: form.getEditUrl(),
                   title: form.getTitle(), description: form.getDescription() };
     var old = sb_('get', 'settings?key=eq.google_form&select=value')[0];
@@ -412,7 +418,7 @@ function importFormPhotos_(publishedUrl, withHeader) {
   page.items.forEach(function (it) {
     var p = products.filter(function (x) { return String(x.form_item_id) === it.id; })[0];
     if (!p) {                                   // pas encore lié : on cherche par le nom de la question
-      form = form || FormApp.openByUrl(publishedUrl.replace(/\/viewform.*$/, '/edit'));
+      form = form || form_();
       var item = null;
       try { item = form.getItemById(Number(it.id)); } catch (e) { /* question supprimée */ }
       if (!item) return;
@@ -442,9 +448,9 @@ function importFormPhotos_(publishedUrl, withHeader) {
  */
 function importPhotos() {
   var ss = SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
-  var formUrl = ss.getFormUrl();
-  Logger.log('Formulaire lié à la Sheet : ' + formUrl);
-  var form = FormApp.openByUrl(formUrl);                 // erreur ici = adactaband666 n'est pas éditeur du Form
+  Logger.log('Compte qui exécute le script : ' + Session.getEffectiveUser().getEmail());
+  Logger.log('Formulaire : ' + (props_().getProperty('FORM_ID') || DEFAULT_FORM_ID));
+  var form = form_(ss);                                  // erreur ici = ce compte n'est pas éditeur du Form
   var published = form.getPublishedUrl();
   var res = UrlFetchApp.fetch(published, { muteHttpExceptions: true, followRedirects: true });
   var html = res.getContentText();
@@ -462,7 +468,7 @@ function importPhotos() {
 /** En-tête du formulaire (titre et description) modifié depuis le Katalóg. */
 function updateFormHeader_(payload) {
   var ss = SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
-  var form = FormApp.openByUrl(ss.getFormUrl());
+  var form = form_(ss);
   if (payload && payload.title != null && String(payload.title).trim()) form.setTitle(String(payload.title).trim());
   if (payload && payload.description != null) form.setDescription(String(payload.description));
   saveFormLinks_(ss);
