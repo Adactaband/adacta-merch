@@ -135,3 +135,14 @@ test('copie cachée : équipe sans destinataire ni copies', () => {
   assert.equal(bccList(['a@x.sk', 'B@x.sk', 'c@x.sk', 'a@x.sk'], 'b@x.sk', 'c@x.sk'), 'a@x.sk');
   assert.equal(bccList([], 'b@x.sk', ''), '');
 });
+
+test('confirmation automatique : langue et variables', () => {
+  const { renderTemplate, confirmationKey } = require('../google-apps-script/Code.gs');
+  const T = { confirmation: {}, confirmation_sk: {} };
+  assert.equal(confirmationKey({ country_code: 'CZ' }, T), 'confirmation_sk');
+  assert.equal(confirmationKey({ country_code: 'AT' }, T), 'confirmation');
+  const o = { order_no: 674, first_name: 'Jana', total_eur: 33, total_czk: 830, shipping_method: 'Packeta' };
+  const items = [{ product: 'Raven T-Shirt', size: 'L', qty: 1, unit_eur: 18 }, { product: 'Beanie', qty: 1, unit_eur: 15 }];
+  assert.equal(renderTemplate('Ahoj {first_name}, č. {order_no}\n{items}\n{total_eur} € / {total_czk} Kč {x}', o, items, {}),
+    'Ahoj Jana, č. 674\n- Raven T-Shirt (L) × 1 · 18 €\n- Beanie × 1 · 15 €\n33 € / 830 Kč {x}');
+});

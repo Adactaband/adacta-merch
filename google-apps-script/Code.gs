@@ -24,6 +24,9 @@
  */
 
 var DEFAULT_IMPORT_FROM = '2026-09-15';
+// Confirmation automatique : seulement pour les réponses arrivées après cette date
+// (les commandes importées avant la mise en service ne reçoivent rien)
+var DEFAULT_AUTO_CONFIRM_SINCE = '2026-11-23T14:30:00Z';
 // Google Form « Adacta Merch Order » (propriété FORM_ID pour en changer)
 var DEFAULT_FORM_ID = '1YxQzbESLF-PS7lLEy__SVM7D0cHOof2_4obaQJNwWXE';
 
@@ -566,6 +569,77 @@ function bccList(team, to, cc) {
   }).join(',');
 }
 
+/** Montant au format slovaque (« 18 », « 4,5 »), comme sur le site. */
+function money_(v) {
+  var n = Math.round((+v || 0) * 100) / 100;
+  var parts = String(Math.abs(n)).split('.');
+  var int = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (n < 0 ? '-' : '') + int + (parts[1] ? ',' + parts[1] : '');
+}
+
+/** Remplace les variables {…} d'un modèle de mail (même règles que le site). */
+function renderTemplate(text, o, items, settings) {
+  var line = function (i) { return '- ' + i.product + (i.size ? ' (' + i.size + ')' : '') + ' × ' + i.qty; };
+  var trackTpl = ((settings && settings.tracking_urls) || {})[o.carrier || (/dpd/i.test(o.shipping_method || '') ? 'dpd' : /packeta/i.test(o.shipping_method || '') ? 'packeta' : '')];
+  var vars = {
+    order_no: o.order_no == null ? '' : o.order_no, first_name: o.first_name || '', last_name: o.last_name || '',
+    customer_name: o.customer_name || '', email: o.email || '',
+    items: items.map(function (i) { return line(i) + (i.unit_eur != null && i.unit_eur !== '' ? ' · ' + money_(i.qty * i.unit_eur) + ' €' : ''); }).join('\n'),
+    missing_items: items.filter(function (i) { return i.missing; }).map(line).join('\n'),
+    subtotal_eur: money_(o.subtotal_eur), discount_eur: money_(o.discount_eur_effective),
+    shipping_eur: money_(o.shipping_eur_effective), shipping_czk: money_(o.shipping_czk_effective),
+    grand_total_eur: money_(o.grand_total_eur), grand_total_czk: money_(o.grand_total_czk),
+    weight_kg: money_(Math.round((+o.weight_g || 0) / 10) / 100),
+    total_eur: money_(o.total_eur), total_czk: money_(o.total_czk),
+    shipping_method: o.shipping_method || '', pickup_point: o.pickup_point || '',
+    tracking_number: o.tracking_number || '',
+    tracking_url: trackTpl && o.tracking_number ? trackTpl.replace('{tracking}', encodeURIComponent(o.tracking_number)) : '',
+    address: [o.street, ((o.postal_code || '') + ' ' + (o.city || '')).trim(), o.country].filter(function (x) { return x; }).join(', ')
+  };
+  return String(text || '').replace(/\{(\w+)\}/g, function (m, k) { return k in vars ? vars[k] : m; });
+}
+
+/** Modèle de confirmation selon le pays : SK et CZ → slovaque, sinon anglais. */
+function confirmationKey(o, templates) {
+  var cc = String(o.country_code || '').toUpperCase();
+  var sk = (cc === 'SK' || cc === 'CZ') && templates.confirmation_sk;
+  return sk ? 'confirmation_sk' : templates.confirmation ? 'confirmation' : (templates.confirmation_sk ? 'confirmation_sk' : null);
+}
+
+/**
+ * Met en file la confirmation de commande des nouvelles réponses au formulaire
+ * (case « Confirmation automatique » dans Nastavenia, activée par défaut).
+ * Une commande qui a déjà un mail de confirmation (envoyé, en attente ou annulé) n'en reçoit pas d'autre.
+ */
+function queueConfirmations_() {
+  var cfg = (sb_('get', 'settings?key=eq.email&select=value')[0] || {}).value || {};
+  if (cfg.auto_confirm === false) return 0;
+  var since = cfg.auto_confirm_since || DEFAULT_AUTO_CONFIRM_SINCE;
+  var orders = sb_('get', 'orders_view?select=*&source_key=not.is.null&order_no=not.is.null&email=neq.'
+                   + '&status=neq.annulee&submitted_at=gt.' + encodeURIComponent(since) + '&order=order_no&limit=50');
+  if (!orders.length) return 0;
+  var ids = orders.map(function (o) { return o.id; }).join(',');
+  var done = {};
+  sb_('get', 'email_outbox?select=order_id&kind=like.confirmation*&order_id=in.(' + ids + ')')
+    .forEach(function (m) { done[m.order_id] = true; });
+  var todo = orders.filter(function (o) { return !done[o.id] && o.email; });
+  if (!todo.length) return 0;
+  var templates = (sb_('get', 'settings?key=eq.email_templates&select=value')[0] || {}).value || {};
+  var tracking = (sb_('get', 'settings?key=eq.tracking_urls&select=value')[0] || {}).value || {};
+  var items = sb_('get', 'order_items?select=*&order_id=in.(' + todo.map(function (o) { return o.id; }).join(',') + ')&order=position');
+  var rows = [];
+  todo.forEach(function (o) {
+    var key = confirmationKey(o, templates);
+    if (!key) return;
+    var its = items.filter(function (i) { return i.order_id === o.id; });
+    rows.push({ order_id: o.id, kind: key, to_email: o.email, requested_by: 'auto',
+                subject: renderTemplate(templates[key].subject, o, its, { tracking_urls: tracking }),
+                body_text: renderTemplate(templates[key].body, o, its, { tracking_urls: tracking }) });
+  });
+  if (rows.length) sb_('post', 'email_outbox', rows);
+  return rows.length;
+}
+
 /** Envoie les mails en attente préparés sur le site. */
 function sendPendingEmails() {
   var settings = sb_('get', 'settings?key=eq.email&select=value');
@@ -611,7 +685,9 @@ function syncAll() {
   try {
     var a = importSheet();
     var b = props_().getProperty('GMAIL_ORDER_NUMBERS') === 'true' ? importOrderNumbers() : { assigned: 0 };
-    return { rows: a.rows, created: a.created, order_numbers: b.assigned, at: new Date().toISOString() };
+    var c = 0;
+    try { c = queueConfirmations_(); } catch (e) { Logger.log('Confirmations automatiques : ' + e); }
+    return { rows: a.rows, created: a.created, order_numbers: b.assigned, confirmations: c, at: new Date().toISOString() };
   } finally { lock.releaseLock(); }
 }
 
@@ -641,12 +717,22 @@ function setup() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('processQueue').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('syncAll').timeBased().everyMinutes(15).create();
+  // import immédiat à chaque réponse au formulaire (N° + confirmation en 1 à 2 minutes)
+  try { ScriptApp.newTrigger('onFormSubmitSync').forForm(form_()).onFormSubmit().create(); }
+  catch (e) { Logger.log('Déclencheur du formulaire non créé (adactaband666 doit être éditeur du Form) : ' + e); }
   Logger.log(JSON.stringify(syncAll()));
+}
+
+/** Nouvelle réponse au formulaire : import tout de suite, puis envoi de la confirmation. */
+function onFormSubmitSync() {
+  Utilities.sleep(5000);                 // laisse à Google le temps d'écrire la ligne dans la Sheet
+  syncAll();
+  sendPendingEmails();
 }
 
 // Pour les tests hors Google (Node)
 if (typeof module !== 'undefined') {
-  module.exports = { bccList, parseSheet: parseSheet, parseProductHeader: parseProductHeader,
+  module.exports = { bccList, renderTemplate, confirmationKey, money_, parseSheet: parseSheet, parseProductHeader: parseProductHeader,
                      parseItemCell: parseItemCell, parseOrderMail: parseOrderMail,
                      classifyHeader: classifyHeader, toIso: toIso, buildCatalog: buildCatalog,
                      formTitle: formTitle, formChoices: formChoices, planFormUpdate: planFormUpdate, normSize: normSize,

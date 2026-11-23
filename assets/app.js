@@ -778,6 +778,7 @@ async function pageSettings() {
         <label>${t('set.reply_to')}<input name="reply_to" type="email" value="${esc(mail.reply_to ?? '')}"></label>
         <label class="span2">${t('set.cc')}<input name="cc" value="${esc(mail.cc ?? '')}"></label>
         <label class="span2 check"><input type="checkbox" name="bcc_users" ${mail.bcc_users === false ? '' : 'checked'}> ${t('set.bcc_users')}</label>
+        <label class="span2 check"><input type="checkbox" name="auto_confirm" ${mail.auto_confirm === false ? '' : 'checked'}> ${t('set.auto_confirm')}</label>
         <div class="span2"><button class="primary">${t('save')}</button></div>
       </form>
     </section>
@@ -821,7 +822,9 @@ async function pageSettings() {
   $('#f-mail').onsubmit = async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    await guard(() => db.saveSetting('email', { ...Object.fromEntries(fd), bcc_users: fd.has('bcc_users') }), t('saved'));
+    const was = (state.settings.email || {}).auto_confirm !== false, on = fd.has('auto_confirm');
+    await guard(() => db.saveSetting('email', { ...(state.settings.email || {}), ...Object.fromEntries(fd), bcc_users: fd.has('bcc_users'),
+      auto_confirm: on, ...(on && !was ? { auto_confirm_since: new Date().toISOString() } : {}) }), t('saved'));
     state.settings = await db.settings();
   };
   $('#f-tracking').onsubmit = async e => {

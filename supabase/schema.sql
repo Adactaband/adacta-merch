@@ -619,7 +619,8 @@ insert into public.settings(key, value) values
   "sender_name": "ADACTA",
   "cc": "",
   "reply_to": "",
-  "bcc_users": true
+  "bcc_users": true,
+  "auto_confirm": true
 }'::jsonb),
 ('email_templates', '{
   "confirmation": {
