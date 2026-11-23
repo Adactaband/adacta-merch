@@ -75,6 +75,10 @@ Statuts : **Non traitée → En préparation → Emballée → Envoyée → Livr
    - la clé **secret** (`sb_secret_…`, ou l'ancienne clé *service_role*) : elle va **uniquement** dans le script Google. Ne la mets jamais dans le site ni sur GitHub.
    Note aussi l'**URL du projet** (`https://xxxx.supabase.co`).
 
+### 1 bis. Catalogue = Google Form
+
+Après le premier import du script (étape 3), exécute [`supabase/catalog_from_form.sql`](supabase/catalog_from_form.sql) dans le SQL Editor : il aligne le Katalóg sur les 29 articles du formulaire (actifs, SOLD OUT, prix, type, catégorie, ordre, poids estimés si vides) et passe les anciens articles en inactif. Il peut être relancé sans risque.
+
 ### 2. GitHub Pages : le site
 
 1. Crée un dépôt GitHub (ex. `adacta-merch`). Il peut être public, puisqu'il ne contient aucune donnée ni aucun secret. GitHub Pages sur un dépôt privé demande un compte payant.

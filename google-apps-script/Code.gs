@@ -197,7 +197,8 @@ function buildCatalog(rows, formItems, now) {
     // coupe Girly à part : « Girly M » → girly_sizes ["M"]
     p.girly_sizes = p.sizes.filter(function (x) { return /^Girly /.test(x); }).map(function (x) { return x.slice(6); });
     p.sizes = p.sizes.filter(function (x) { return !/^Girly /.test(x); });
-    p.active = formItems ? !!form && !p.sold_out : !p.sold_out && (!p.last || p.last >= yearAgo);
+    // article présent dans le formulaire = actif (même SOLD OUT, affiché comme tel) ; sinon ancien article
+    p.active = formItems ? !!form : !p.sold_out && (!p.last || p.last >= yearAgo);
     delete p.last;
     return p;
   });
