@@ -577,6 +577,11 @@ revoke execute on function public.import_products(jsonb) from anon, public;
 grant execute on function public.import_products(jsonb) to authenticated, service_role;
 revoke execute on function public.assign_order_no(integer, text, timestamptz, text) from anon, public;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+-- le script Google (clé secret = rôle service_role) lit et écrit toutes les tables
+-- (les nouveaux projets Supabase ne donnent plus ces droits automatiquement)
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
 grant execute on function public.import_order(jsonb) to authenticated, service_role;
 grant execute on function public.assign_order_no(integer, text, timestamptz, text) to authenticated, service_role;
 grant execute on function public.is_allowed(), public.is_admin(), public.current_email() to authenticated, anon;
