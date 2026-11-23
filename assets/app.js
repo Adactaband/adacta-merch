@@ -9,7 +9,11 @@ const statusLabel = s => t('st.' + s);
 const OPEN_STATUSES = ['non_traitee', 'en_attente', 'en_preparation', 'emballee', 'nevyzdvihnute'];
 const CARRIER_KEYS = ['', 'packeta', 'dpd', 'posta', 'ceska_posta', 'main_propre', 'autre'];
 const CARRIER_NAMES = { '': '—', packeta: 'Packeta', dpd: 'DPD', posta: 'Slovenská pošta', ceska_posta: 'Česká pošta' };
-const carrierLabel = k => CARRIER_NAMES[k] ?? t('carrier.' + k);
+// transporteurs ajoutés sur la page Doprava (réglage « carriers » : [{ key, name }])
+const customCarriers = () => (state.settings.carriers || []).filter(c => c && c.key);
+const carrierKeys = () => [...CARRIER_KEYS.slice(0, -1), ...customCarriers().map(c => c.key).filter(k => !CARRIER_KEYS.includes(k)), 'autre'];
+const carrierLabel = k => customCarriers().find(c => c.key === k)?.name ?? CARRIER_NAMES[k] ?? t('carrier.' + k);
+const carrierSlug = name => String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
 const CUSTOMER_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'company', 'street', 'postal_code', 'city', 'country', 'social'];
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -399,7 +403,7 @@ async function pageOrder(id) {
           <label>${t('order.status')}<select name="status">${statusOptions(o.status)}</select></label>
           <label class="check"><input type="checkbox" name="paid" ${o.paid ? 'checked' : ''}> ${t('order.payment')}</label>
           <label>${t('order.number')}<input name="order_no" type="number" value="${esc(o.order_no ?? '')}"></label>
-          <label>${t('order.carrier')}<select name="carrier">${CARRIER_KEYS.map(k => `<option value="${k}" ${k === (o.carrier ?? guessCarrier(o.shipping_method)) ? 'selected' : ''}>${esc(carrierLabel(k))}</option>`).join('')}</select></label>
+          <label>${t('order.carrier')}<select name="carrier">${carrierKeys().map(k => `<option value="${k}" ${k === (o.carrier ?? guessCarrier(o.shipping_method)) ? 'selected' : ''}>${esc(carrierLabel(k))}</option>`).join('')}</select></label>
           <label class="span2">${t('order.tracking_no')}<input name="tracking_number" value="${esc(o.tracking_number ?? '')}" placeholder="${t('order.tracking_ph')}"></label>
           ${tUrl ? `<p class="span2 small"><a href="${esc(tUrl)}" target="_blank" rel="noopener">${t('order.open_tracking')}</a></p>` : ''}
           <label class="span2">${t('order.internal')}<textarea name="internal_notes" rows="3" placeholder="${t('order.internal_ph')}">${esc(o.internal_notes ?? '')}</textarea></label>
@@ -794,7 +798,7 @@ async function pageSettings() {
       <h2>${t('set.tracking')}</h2>
       <p class="small muted">${t('set.tracking_help')}</p>
       <form id="f-tracking" class="form-grid">
-        ${CARRIER_KEYS.filter(k => k && k !== 'main_propre').map(k => `<label class="span2">${esc(carrierLabel(k))}<input name="${k}" value="${esc(tracking[k] ?? '')}"></label>`).join('')}
+        ${carrierKeys().filter(k => k && k !== 'main_propre').map(k => `<label class="span2">${esc(carrierLabel(k))}<input name="${k}" value="${esc(tracking[k] ?? '')}"></label>`).join('')}
         <div class="span2"><button class="primary">${t('save')}</button></div>
       </form>
     </section>
@@ -1254,10 +1258,15 @@ async function pageTransport() {
       <input id="pack-g" type="number" min="0" step="10" class="sm" value="${esc(state.settings.shipping?.packaging_g ?? 0)}"></label>
       <p class="small muted">${t('tr.codes')}</p></section>
     <div id="carriers"></div>
-    <div class="row-actions"><select id="new-carrier" aria-label="${t('tr.carrier')}"><option value="">${t('tr.add_carrier')}</option>
-      ${CARRIER_KEYS.filter(k => k).map(k => `<option value="${k}">${esc(carrierLabel(k))}</option>`).join('')}</select>
+    <div class="row-actions"><select id="new-carrier" aria-label="${t('tr.carrier')}"></select>
       <button id="tr-save" class="primary">${t('tr.save')}</button></div>`;
+  const fillCarrierSelect = () => {
+    $('#new-carrier').innerHTML = `<option value="">${t('tr.add_carrier')}</option>`
+      + carrierKeys().filter(k => k && !grid[k]).map(k => `<option value="${k}">${esc(carrierLabel(k))}</option>`).join('')
+      + `<option value="__new">${t('tr.new_carrier')}</option>`;
+  };
   const draw = () => {
+    fillCarrierSelect();
     $('#carriers').innerHTML = Object.entries(grid).map(([carrier, g]) => {
       sortCountries(g); g.weights.sort((a, b) => a - b);
       return `<section class="card carrier" data-carrier="${esc(carrier)}">
@@ -1307,9 +1316,24 @@ async function pageTransport() {
       };
     });
   };
-  $('#new-carrier').onchange = e => {
-    const k = e.target.value; e.target.value = '';
-    if (k && !grid[k]) { grid[k] = { countries: ['SK', 'CZ'], weights: [1000, 5000], cells: {} }; draw(); }
+  const addCarrier = k => {
+    if (!k || grid[k]) return;
+    grid[k] = { countries: ['SK', 'CZ'], weights: [1000, 5000], cells: {}, cod: {} };
+    draw();
+    $(`#carriers section[data-carrier="${k}"]`)?.scrollIntoView({ block: 'center' });
+  };
+  $('#new-carrier').onchange = async e => {
+    let k = e.target.value; e.target.value = '';
+    if (k === '__new') {
+      const name = ((await askText(t('tr.new_carrier_prompt'), 40)) || '').trim();
+      k = carrierSlug(name);
+      if (!k) return;
+      if (!carrierKeys().includes(k)) {
+        state.settings.carriers = [...customCarriers(), { key: k, name }];
+        await guard(() => db.saveSetting('carriers', state.settings.carriers));
+      }
+    }
+    addCarrier(k);
   };
   $('#tr-save').onclick = async () => {
     const rows = [];
