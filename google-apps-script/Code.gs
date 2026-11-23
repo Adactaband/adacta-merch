@@ -416,10 +416,12 @@ function importFormPhotos_(publishedUrl, withHeader) {
       var item = null;
       try { item = form.getItemById(Number(it.id)); } catch (e) { /* question supprimée */ }
       if (!item) return;
-      var name = parseProductHeader(item.getTitle()).name.toLowerCase();
-      p = products.filter(function (x) { return x.name.toLowerCase() === name; })[0];
+      var norm = function (t) { return String(t).replace(/[\s\u00a0]+/g, ' ').trim().toLowerCase(); };
+      var name = norm(parseProductHeader(item.getTitle()).name);
+      p = products.filter(function (x) { return norm(x.name) === name; })[0];
     }
-    if (!p || (p.photos && p.photos.length)) return;
+    if (!p) { Logger.log('Question ' + it.id + ' : aucun article du Katalóg ne correspond'); return; }
+    if (p.photos && p.photos.length) return;
     try {
       var blob = UrlFetchApp.fetch(it.image).getBlob();
       var url = storePhoto_('form/' + it.id + '.' + (/png/.test(blob.getContentType()) ? 'png' : 'jpg'), blob);
@@ -431,6 +433,29 @@ function importFormPhotos_(publishedUrl, withHeader) {
     try { out.header_image = storePhoto_('form/header.jpg', UrlFetchApp.fetch(page.header).getBlob()); }
     catch (e) { Logger.log('En-tête : ' + e); }
   }
+  return out;
+}
+
+/**
+ * À lancer à la main (Exécuter → importPhotos) : importe les photos du Google Form dans le Katalóg
+ * et écrit dans le journal ce qui a été trouvé, pour comprendre un blocage.
+ */
+function importPhotos() {
+  var ss = SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
+  var formUrl = ss.getFormUrl();
+  Logger.log('Formulaire lié à la Sheet : ' + formUrl);
+  var form = FormApp.openByUrl(formUrl);                 // erreur ici = adactaband666 n'est pas éditeur du Form
+  var published = form.getPublishedUrl();
+  var res = UrlFetchApp.fetch(published, { muteHttpExceptions: true, followRedirects: true });
+  var html = res.getContentText();
+  var page = parseFormPage(html);
+  Logger.log('Page publique : HTTP ' + res.getResponseCode() + ', ' + html.length + ' caractères, '
+             + page.items.length + ' questions avec image, en-tête : ' + (page.header ? 'oui' : 'non'));
+  var products = sb_('get', 'products?select=id,name,photos&active=eq.true');
+  Logger.log('Articles actifs : ' + products.length + ', dont avec photo : '
+             + products.filter(function (p) { return p.photos && p.photos.length; }).length);
+  var out = importFormPhotos_(published, true);
+  Logger.log('Photos ajoutées : ' + out.added + (out.header_image ? ' + en-tête' : ''));
   return out;
 }
 
