@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ADACTA · Orders</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+  <div id="demo-banner" class="demo" hidden data-i18n="demo"></div>
+  <nav id="nav">
+    <a href="#/commandes" class="brand"><img src="assets/logo.png" alt="ADACTA" class="logo"><span>merch</span></a>
+    <span id="nav-links" class="nav-links" hidden>
+      <a href="#/commandes" data-page="commandes" data-i18n="nav.orders"></a>
+      <a href="#/preparation" data-page="preparation" data-i18n="nav.prep"></a>
+      <a href="#/katalog" data-page="katalog" data-i18n="nav.catalog"></a>
+      <a href="#/doprava" data-page="doprava" data-i18n="nav.transport"></a>
+      <a href="#/reglages" data-page="reglages" data-i18n="nav.settings"></a>
+      <span class="spacer"></span>
+      <span id="sync-info" class="small muted"></span>
+      <button id="sync" class="ghost" data-i18n="nav.sync"></button>
+      <span id="me" class="small muted"></span>
+      <button id="logout" class="link" data-i18n="nav.logout"></button>
+    </span>
+    <span id="lang" class="lang" role="group" aria-label="Language / Jazyk"></span>
+  </nav>
+  <main id="app"><p class="muted">Chargement…</p></main>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>
