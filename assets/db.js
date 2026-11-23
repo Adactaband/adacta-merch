@@ -63,7 +63,7 @@ export function computeView(o, items, rules, ctx = {}) {
     country_code: q.country_code, weight_g: q.weight_g, weight_unknown: q.weight_unknown,
     shipping_eur_effective: +se, shipping_czk_effective: +sc,
     cod_effective: q.cod, cod_eur: q.cod_eur, cod_czk: q.cod_czk,
-    shipping_unknown: o.shipping_eur == null && !q.rate,
+    shipping_unknown: o.shipping_eur == null && !q.rate && o.carrier !== 'main_propre',
     grand_total_eur: sub + de + +se, grand_total_czk: subCzk + dc + +sc,
     items_count: items.reduce((a, i) => a + i.qty, 0),
     subtotal_eur: sub, subtotal_czk: subCzk,

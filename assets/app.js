@@ -24,6 +24,8 @@ const fmtDate = (v, time = false) => v ? new Date(v).toLocaleString(locale(), ti
   ? { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
   : { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 const shortShipping = s => /dpd/i.test(s || '') ? 'DPD' : /packeta/i.test(s || '') ? 'Packeta' : (s || '—');
+// transporteur choisi dans la fiche, sinon celui du choix fait dans le formulaire
+const shipLabel = o => o.carrier ? carrierLabel(o.carrier) : shortShipping(o.shipping_method);
 const guessCarrier = s => /dpd/i.test(s || '') ? 'dpd' : /packeta/i.test(s || '') ? 'packeta' : '';
 const statusBadge = s => `<span class="badge st-${esc(s)}">${esc(statusLabel(s))}</span>`;
 const statusOptions = sel => STATUS_KEYS.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(statusLabel(k))}</option>`).join('');
@@ -208,7 +210,7 @@ function filtered() {
     (!f.pay || String(isCod(o)) === f.pay) &&
     (f.status === 'all' || (f.status === 'open' ? OPEN_STATUSES.includes(o.status)
       : f.status === 'missing' ? o.missing_count > 0 && o.status !== 'annulee' : o.status === f.status)) &&
-    (!f.shipping || shortShipping(o.shipping_method) === f.shipping) &&
+    (!f.shipping || shipLabel(o) === f.shipping) &&
     (f.paid === '' || String(!!o.paid) === f.paid) &&
     (!q || [o.order_no, o.customer_name, o.email, o.city, o.country, o.items_summary, o.tracking_number, o.customer_notes]
       .some(v => String(v ?? '').toLowerCase().includes(q))));
@@ -243,7 +245,7 @@ async function pageOrders() {
         <option value="missing">${t('miss.tile')}</option>${statusOptions('')}</select>
       <select id="f-country" aria-label="${t('col.country')}"><option value="">${t('flt.all_countries')}</option>
         <option value="SK">SK</option><option value="CZ">CZ</option><option value="other">${t('flt.other_countries')}</option></select>
-      <select id="f-shipping" aria-label="${t('col.shipping')}"><option value="">${t('list.all_shipping')}</option><option>Packeta</option><option>DPD</option></select>
+      <select id="f-shipping" aria-label="${t('col.shipping')}"><option value="">${t('list.all_shipping')}</option>${[...new Set(['Packeta', 'DPD', ...state.orders.map(shipLabel)])].filter(x => x && x !== '—').map(x => `<option>${esc(x)}</option>`).join('')}</select>
       <select id="f-pay" aria-label="${t('pay.method')}"><option value="">${t('flt.all_pay')}</option>
         <option value="true">${t('pay.cod')}</option><option value="false">${t('pay.prepaid')}</option></select>
       <select id="f-paid" aria-label="${t('col.paid')}"><option value="">${t('list.paid_any')}</option><option value="true">${t('list.paid_yes')}</option><option value="false">${t('list.paid_no')}</option></select>
@@ -295,12 +297,12 @@ function drawRows() {
       <td>${fmtDate(o.submitted_at)}</td>
       <td><a href="#/commande/${o.id}">${esc(o.customer_name || o.email)}</a>${o.customer_notes ? ` <span class="note-dot" title="${esc(o.customer_notes)}">✎</span>` : ''}</td>
       <td>${esc(o.country)}</td>
-      <td>${esc(shortShipping(o.shipping_method))}${o.tracking_number ? `<div class="small mono">${esc(o.tracking_number)}</div>` : ''}</td>
+      <td>${esc(shipLabel(o))}${o.carrier && shortShipping(o.shipping_method) !== shipLabel(o) ? `<div class="small muted" title="${esc(o.shipping_method)}">${t('list.form_choice', { v: esc(shortShipping(o.shipping_method)) })}</div>` : ''}${o.tracking_number ? `<div class="small mono">${esc(o.tracking_number)}</div>` : ''}</td>
       <td class="items">${o.missing_count ? `<span class="missing-tag">⚠ ${t('miss.badge', { n: o.missing_count })}</span> ` : ''}${esc(o.items_summary)}</td>
       <td class="num">${money(o.total_eur)} €${+o.shipping_eur_effective ? `<div class="small muted">${t('ship.plus', { amount: money(o.shipping_eur_effective) })}</div>` : ''}</td>
       <td class="pay-cell"><button class="pay-toggle ${o.paid ? 'on' : ''}" aria-pressed="${!!o.paid}"
           title="${t(o.paid ? 'pay.unmark' : 'pay.mark')}" aria-label="${t(o.paid ? 'pay.unmark' : 'pay.mark')}">${o.paid ? '✓' : ''}</button>
-        <span class="pay-how ${isCod(o) ? 'cod' : 'pre'}">${t(isCod(o) ? 'pay.cod' : 'pay.prepaid')}</span></td>
+        <span class="pay-how ${isCod(o) ? 'cod' : 'pre'}">${t(o.carrier === 'main_propre' && isCod(o) ? 'pay.pickup' : isCod(o) ? 'pay.cod' : 'pay.prepaid')}</span></td>
       <td><select class="row-status st-${o.status}" aria-label="${t('col.status')}">${statusOptions(o.status)}</select></td>
     </tr>`).join('') || `<tr><td colspan="10" class="empty">${t('list.empty')}</td></tr>`;
   const tot = list.reduce((a, o) => a + (+o.total_eur || 0), 0);
