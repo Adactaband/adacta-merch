@@ -73,7 +73,8 @@ export function renderTemplate(text, o, items, settings) {
     total_eur: money(o.total_eur), total_czk: money(o.total_czk),
     shipping_method: o.shipping_method ?? '', pickup_point: o.pickup_point ?? '',
     tracking_number: o.tracking_number ?? '', tracking_url: trackingUrl(o, settings),
-    address: [o.street, `${o.postal_code ?? ''} ${o.city ?? ''}`.trim(), o.country].filter(Boolean).join(', ')
+    address: [o.street, `${o.postal_code ?? ''} ${o.city ?? ''}`.trim(), o.country].filter(Boolean).join(', '),
+    iban: settings?.bank?.iban ?? '', bic: settings?.bank?.bic ?? ''
   };
   return String(text || '').replace(/\{(\w+)\}/g, (m, k) => k in vars ? vars[k] : m);
 }
@@ -343,8 +344,10 @@ async function bulkMail(key) {
   const orders = state.orders.filter(o => ids.includes(o.id));
   const missing = orders.filter(o => !o.email);
   const noTracking = /\{tracking_(number|url)\}/.test(tpl.body) ? orders.filter(o => !o.tracking_number) : [];
+  const noShipping = /\{(shipping_eur|shipping_czk|grand_total_eur|grand_total_czk)\}/.test(tpl.body) ? orders.filter(o => o.shipping_unknown) : [];
   const ok = await confirmDialog(t('bulk.confirm', { label: tpl.label || key, n: orders.length - missing.length }) +
     (noTracking.length ? '\n\n' + t('bulk.no_tracking', { n: noTracking.length, list: noTracking.map(orderLabel).join(', ') }) : '') +
+    (noShipping.length ? '\n\n' + t('bulk.no_shipping', { n: noShipping.length, list: noShipping.map(orderLabel).join(', ') }) : '') +
     (missing.length ? '\n\n' + t('bulk.no_email', { n: missing.length }) : ''));
   if (!ok) return;
   const all = await db.listItems(ids);
@@ -635,6 +638,8 @@ async function pageOrder(id) {
       if (/\{\w+\}/.test(body + $('#m-subject').value) && !await confirmDialog(t('mail.leftover'))) return;
       if (!o.order_no && /\{order_no\}/.test(src) && !await confirmDialog(t('mail.no_number'))) return;
       if (/\{tracking_(number|url)\}/.test(src) && !o.tracking_number && !await confirmDialog(t('mail.no_tracking'))) return;
+      if (/\{(shipping_eur|shipping_czk|grand_total_eur|grand_total_czk)\}/.test(src) && o.shipping_unknown && !await confirmDialog(t('mail.no_shipping'))) return;
+      if (/\{(iban|bic)\}/.test(src) && !state.settings.bank?.iban && !await confirmDialog(t('mail.no_iban'))) return;
       await guard(async () => {
         await db.queueEmails([{ order_id: o.id, kind: $('#tpl').value || 'custom', to_email: $('#m-to').value.trim(),
                                 subject: $('#m-subject').value, body_text: body }]);
@@ -788,8 +793,18 @@ async function pageSettings() {
     </section>
 
     <section class="card">
+      <h2>${t('set.bank')}</h2>
+      <p class="small muted">${t('set.bank_help')}</p>
+      <form id="f-bank" class="form-grid">
+        <label>IBAN<input name="iban" value="${esc(state.settings.bank?.iban ?? '')}" autocomplete="off" spellcheck="false"></label>
+        <label>SWIFT/BIC<input name="bic" value="${esc(state.settings.bank?.bic ?? '')}" autocomplete="off" spellcheck="false"></label>
+        <div class="span2"><button class="primary">${t('save')}</button></div>
+      </form>
+    </section>
+
+    <section class="card">
       <h2>${t('set.templates')}</h2>
-      <p class="small muted">${t('set.vars')} {first_name} {last_name} {customer_name} {order_no} {items} {missing_items} {weight_kg} {shipping_eur} {grand_total_eur} {grand_total_czk} {subtotal_eur} {discount_eur} {total_eur} {total_czk} {shipping_method} {pickup_point} {tracking_number} {tracking_url} {address}</p>
+      <p class="small muted">${t('set.vars')} {first_name} {last_name} {customer_name} {order_no} {items} {missing_items} {weight_kg} {shipping_eur} {grand_total_eur} {grand_total_czk} {subtotal_eur} {discount_eur} {total_eur} {total_czk} {shipping_method} {pickup_point} {tracking_number} {tracking_url} {address} {iban} {bic}</p>
       <div id="tpls">${Object.entries(tpls).map(([k, tp]) => tplEditor(k, tp)).join('')}</div>
       <div class="row-actions"><button id="add-tpl" class="ghost">${t('set.new_tpl')}</button> <button id="save-tpls" class="primary">${t('set.save_tpls')}</button></div>
     </section>
@@ -829,6 +844,13 @@ async function pageSettings() {
     const was = (state.settings.email || {}).auto_confirm !== false, on = fd.has('auto_confirm');
     await guard(() => db.saveSetting('email', { ...(state.settings.email || {}), ...Object.fromEntries(fd), bcc_users: fd.has('bcc_users'),
       auto_confirm: on, ...(on && !was ? { auto_confirm_since: new Date().toISOString() } : {}) }), t('saved'));
+    state.settings = await db.settings();
+  };
+  $('#f-bank').onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const clean = v => String(v || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    await guard(() => db.saveSetting('bank', { iban: clean(fd.get('iban')), bic: clean(fd.get('bic')) }), t('saved'));
     state.settings = await db.settings();
   };
   $('#f-tracking').onsubmit = async e => {
@@ -1385,6 +1407,7 @@ function formPreviewDialog(ops) {
     const line = o => `<li class="op-${o.op}"><span class="tag">${t('cat.op.' + o.op)}</span> <strong>${esc(o.name)}</strong>
       ${o.op === 'update' && o.title !== o.title_before ? `<div class="small"><s>${esc(o.title_before.split('\n')[0])}</s><br>${esc(o.title.split('\n')[0])}</div>` : ''}
       ${o.op === 'create' ? `<div class="small">${esc(o.title)}</div>` : ''}
+      ${o.op === 'shipping' ? `<pre class="small ship-help">${esc(o.help)}</pre>` : ''}
       ${o.choices && JSON.stringify(o.choices) !== JSON.stringify(o.choices_before) ? `<div class="small muted">${t('cat.sizes_to', { sizes: esc(o.choices.join(', ')) })}</div>` : ''}</li>`;
     d.innerHTML = `<form method="dialog"><h2>${t('cat.form_title')}</h2><ul class="ops">${ops.map(line).join('')}</ul>
       <p class="small muted">${t('cat.form_help')}</p>

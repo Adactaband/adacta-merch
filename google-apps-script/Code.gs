@@ -327,6 +327,68 @@ function formChoiceInfo_(item) {
   return null;
 }
 
+// ---------------------------------------------------------------------
+// Grille des frais de port affichée sous la question « doprava » du formulaire
+// ---------------------------------------------------------------------
+var SHIPPING_MARK = '📦 Cena dopravy / Shipping cost';
+var CARRIER_NAMES_ = { packeta: 'Packeta', dpd: 'DPD', posta: 'Slovenská pošta', ceska_posta: 'Česká pošta' };
+
+/**
+ * Texte de la grille : SK et CZ par transporteur et tranche de poids, + dobierka ;
+ * les autres pays sont calculés au cas par cas.
+ */
+function shippingText(rates, cod, carriers) {
+  var names = {};
+  Object.keys(CARRIER_NAMES_).forEach(function (k) { names[k] = CARRIER_NAMES_[k]; });
+  (carriers || []).forEach(function (c) { if (c && c.key) names[c.key] = c.name; });
+  var price = function (eur, czk) {
+    var out = [];
+    if (eur != null && eur !== '') out.push(money_(eur) + ' €');
+    if (czk != null && czk !== '') out.push(money_(czk) + ' Kč');
+    return out.join(' / ');
+  };
+  var kgTxt = function (g) { return money_(g / 1000) + ' kg'; };
+  var lines = [SHIPPING_MARK];
+  var byCarrier = {};
+  (rates || []).forEach(function (r) {
+    if (r.country !== 'SK' && r.country !== 'CZ') return;
+    ((byCarrier[r.carrier] = byCarrier[r.carrier] || {})[r.country] = byCarrier[r.carrier][r.country] || []).push(r);
+  });
+  Object.keys(byCarrier).sort().forEach(function (carrier) {
+    ['SK', 'CZ'].forEach(function (cc) {
+      var rows = (byCarrier[carrier][cc] || []).filter(function (r) { return price(r.price_eur, r.price_czk); })
+        .sort(function (a, b) { return a.max_weight_g - b.max_weight_g; });
+      if (!rows.length) return;
+      var fee = (cod || []).filter(function (c) { return c.carrier === carrier && (c.country === cc || c.country === '*'); })
+        .sort(function (a, b) { return (a.country === '*') - (b.country === '*'); })[0];
+      var feeTxt = fee && price(fee.price_eur, fee.price_czk) ? ' · dobierka / cash on delivery +' + price(fee.price_eur, fee.price_czk) : '';
+      lines.push((names[carrier] || carrier) + ' ' + cc + ' : ' + rows.map(function (r) {
+        return 'do / up to ' + kgTxt(r.max_weight_g) + ' ' + price(r.price_eur, r.price_czk);
+      }).join(' · ') + feeTxt);
+    });
+  });
+  lines.push('Ostatné krajiny: dopravu vypočítame podľa hmotnosti a krajiny a pošleme vám ju e-mailom.');
+  lines.push('Other countries: we calculate the shipping cost according to the weight and destination and send it to you by email.');
+  return lines.join('\n');
+}
+
+/** Remplace la grille dans un texte d'aide en gardant ce qui est écrit avant. */
+function withShippingText(help, text) {
+  help = String(help || '');
+  var i = help.indexOf(SHIPPING_MARK);
+  var before = (i >= 0 ? help.slice(0, i) : help).replace(/\s+$/, '');
+  return (before ? before + '\n\n' : '') + text;
+}
+
+/** Question du mode de livraison (choix Packeta / DPD…). */
+function shippingItem_(form) {
+  return form.getItems().filter(function (item) {
+    var info = formChoiceInfo_(item);
+    if (!info || parseProductHeader(item.getTitle()).eur != null) return false;
+    return info.get().some(function (c) { return /packeta|dpd|courier|kuriér|pošta|dobierk/i.test(String(c)); });
+  })[0] || null;
+}
+
 /** Aperçu (apply = false) ou publication (apply = true) du Katalóg dans le Google Form. */
 function publishForm_(apply) {
   var ss = SpreadsheetApp.openById(props_().getProperty('SHEET_ID'));
@@ -344,7 +406,19 @@ function publishForm_(apply) {
   var summary = { applied: !!apply, update: 0, create: 0, remove: 0, same: 0,
                   ops: ops.filter(function (o) { return o.op !== 'same'; }), at: new Date().toISOString() };
   ops.forEach(function (o) { summary[o.op]++; });
+  // grille des frais de port sous la question « doprava »
+  var shipItem = shippingItem_(form), shipHelp = null;
+  if (shipItem) {
+    var carriers = (sb_('get', 'settings?key=eq.carriers&select=value')[0] || {}).value || [];
+    shipHelp = withShippingText(shipItem.getHelpText(), shippingText(
+      sb_('get', 'shipping_rates?select=*'), sb_('get', 'cod_fees?select=*'), carriers));
+    if (shipHelp !== shipItem.getHelpText()) {
+      summary.ops.push({ op: 'shipping', name: shipItem.getTitle(), help: shipHelp });
+      summary.shipping = 1;
+    }
+  }
   if (!apply) return summary;
+  if (summary.shipping) shipItem.setHelpText(shipHelp);
   var now = new Date().toISOString();
   ops.forEach(function (o) {
     var item;
@@ -594,7 +668,8 @@ function renderTemplate(text, o, items, settings) {
     shipping_method: o.shipping_method || '', pickup_point: o.pickup_point || '',
     tracking_number: o.tracking_number || '',
     tracking_url: trackTpl && o.tracking_number ? trackTpl.replace('{tracking}', encodeURIComponent(o.tracking_number)) : '',
-    address: [o.street, ((o.postal_code || '') + ' ' + (o.city || '')).trim(), o.country].filter(function (x) { return x; }).join(', ')
+    address: [o.street, ((o.postal_code || '') + ' ' + (o.city || '')).trim(), o.country].filter(function (x) { return x; }).join(', '),
+    iban: (settings && settings.bank && settings.bank.iban) || '', bic: (settings && settings.bank && settings.bank.bic) || ''
   };
   return String(text || '').replace(/\{(\w+)\}/g, function (m, k) { return k in vars ? vars[k] : m; });
 }
@@ -626,6 +701,7 @@ function queueConfirmations_() {
   if (!todo.length) return 0;
   var templates = (sb_('get', 'settings?key=eq.email_templates&select=value')[0] || {}).value || {};
   var tracking = (sb_('get', 'settings?key=eq.tracking_urls&select=value')[0] || {}).value || {};
+  var bank = (sb_('get', 'settings?key=eq.bank&select=value')[0] || {}).value || {};
   var items = sb_('get', 'order_items?select=*&order_id=in.(' + todo.map(function (o) { return o.id; }).join(',') + ')&order=position');
   var rows = [];
   todo.forEach(function (o) {
@@ -633,8 +709,8 @@ function queueConfirmations_() {
     if (!key) return;
     var its = items.filter(function (i) { return i.order_id === o.id; });
     rows.push({ order_id: o.id, kind: key, to_email: o.email, requested_by: 'auto',
-                subject: renderTemplate(templates[key].subject, o, its, { tracking_urls: tracking }),
-                body_text: renderTemplate(templates[key].body, o, its, { tracking_urls: tracking }) });
+                subject: renderTemplate(templates[key].subject, o, its, { tracking_urls: tracking, bank: bank }),
+                body_text: renderTemplate(templates[key].body, o, its, { tracking_urls: tracking, bank: bank }) });
   });
   if (rows.length) sb_('post', 'email_outbox', rows);
   return rows.length;
@@ -732,7 +808,7 @@ function onFormSubmitSync() {
 
 // Pour les tests hors Google (Node)
 if (typeof module !== 'undefined') {
-  module.exports = { bccList, renderTemplate, confirmationKey, money_, parseSheet: parseSheet, parseProductHeader: parseProductHeader,
+  module.exports = { bccList, shippingText, withShippingText, renderTemplate, confirmationKey, money_, parseSheet: parseSheet, parseProductHeader: parseProductHeader,
                      parseItemCell: parseItemCell, parseOrderMail: parseOrderMail,
                      classifyHeader: classifyHeader, toIso: toIso, buildCatalog: buildCatalog,
                      formTitle: formTitle, formChoices: formChoices, planFormUpdate: planFormUpdate, normSize: normSize,

@@ -79,6 +79,10 @@ Statuts : **Non traitée → En préparation → Emballée → Envoyée → Livr
 
 Après le premier import du script (étape 3), exécute [`supabase/catalog_from_form.sql`](supabase/catalog_from_form.sql) dans le SQL Editor : il aligne le Katalóg sur les 29 articles du formulaire (actifs, SOLD OUT, prix, type, catégorie, ordre, poids estimés si vides) et passe les anciens articles en inactif. Il peut être relancé sans risque.
 
+### 1 ter. Mails avec transport et total (mise à jour du 23.11)
+
+Exécute [`supabase/update_email_templates.sql`](supabase/update_email_templates.sql) : la confirmation (SK/CZ) et la demande de paiement affichent le transport et le total à payer ; la confirmation EN (autres pays) annonce que le port sera calculé. Saisis l'IBAN et le SWIFT/BIC dans **Nastavenia → Bankové údaje** (variables `{iban}` et `{bic}`).
+
 ### 2. GitHub Pages : le site
 
 1. Crée un dépôt GitHub (ex. `adacta-merch`). Il peut être public, puisqu'il ne contient aucune donnée ni aucun secret. GitHub Pages sur un dépôt privé demande un compte payant.

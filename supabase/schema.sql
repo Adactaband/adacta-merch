@@ -615,6 +615,7 @@ insert into public.settings(key, value) values
   "posta": "https://tandt.posta.sk/zasielky/{tracking}",
   "ceska_posta": "https://www.postaonline.cz/trackandtrace/-/zasilka/cislo?parcelNumbers={tracking}"
 }'::jsonb),
+('bank', '{"iban": "", "bic": ""}'::jsonb),
 ('email', '{
   "sender_name": "ADACTA",
   "cc": "",
@@ -626,12 +627,12 @@ insert into public.settings(key, value) values
   "confirmation": {
     "label": "Order confirmation · EN",
     "subject": "ADACTA merch · order N°{order_no} confirmed",
-    "body": "Hi {first_name}!\n\nThank you for your order N°{order_no}. We have received it and we are preparing it.\n\n{items}\n\nTotal (excl. shipping): {total_eur} € / {total_czk} Kč\nShipping: {shipping_method}\n\nWe will send you another email with the tracking number as soon as your parcel is on its way.\n\nADACTA"
+    "body": "Hi {first_name}!\n\nThank you for your order N°{order_no}. We have received it and we are preparing it.\n\n{items}\n\nItems: {total_eur} € / {total_czk} Kč\nShipping: {shipping_method}\n\nWe will calculate the shipping cost for your country and send you the total amount with the payment details in a separate email.\n\nADACTA"
   },
   "confirmation_sk": {
     "label": "Potvrdenie objednávky · SK",
     "subject": "ADACTA merch · objednávka č. {order_no} potvrdená",
-    "body": "Ahoj {first_name}!\n\nĎakujeme za tvoju objednávku č. {order_no}. Prijali sme ju a pripravujeme ju.\n\n{items}\n\nSpolu (bez poštovného): {total_eur} € / {total_czk} Kč\nDoručenie: {shipping_method}\n\nHneď ako bude balík na ceste, pošleme ti ďalší e-mail s číslom zásielky.\n\nADACTA"
+    "body": "Ahoj {first_name}!\n\nĎakujeme za tvoju objednávku č. {order_no}. Prijali sme ju a pripravujeme ju.\n\n{items}\n\nTovar: {total_eur} € / {total_czk} Kč\nDoprava ({shipping_method}): {shipping_eur} € / {shipping_czk} Kč\nSpolu na úhradu: {grand_total_eur} € / {grand_total_czk} Kč\n\nHneď ako bude balík na ceste, pošleme ti ďalší e-mail s číslom zásielky.\n\nADACTA"
   },
   "expedition": {
     "label": "Order shipped · EN",
@@ -646,12 +647,12 @@ insert into public.settings(key, value) values
   "payment": {
     "label": "Payment request · EN",
     "subject": "ADACTA merch · order N°{order_no} · payment",
-    "body": "Hi {first_name}!\n\nThank you for your order N°{order_no}.\n\n{items}\n\nTotal (excl. shipping): {total_eur} €\n\nPlease send the payment to the IBAN below, with your order number as reference. We will ship your parcel as soon as we receive it.\n\nIBAN: \n\nADACTA"
+    "body": "Hi {first_name}!\n\nThank you for your order N°{order_no}.\n\n{items}\n\nItems: {total_eur} €\nShipping ({shipping_method}): {shipping_eur} €\nTotal to pay: {grand_total_eur} €\n\nPlease send {grand_total_eur} € to the IBAN below, with your order number as reference. We will ship your parcel as soon as we receive it.\n\nIBAN: {iban}\nSWIFT/BIC: {bic}\n\nADACTA"
   },
   "payment_sk": {
     "label": "Žiadosť o platbu · SK",
     "subject": "ADACTA merch · objednávka č. {order_no} · platba",
-    "body": "Ahoj {first_name}!\n\nĎakujeme za tvoju objednávku č. {order_no}.\n\n{items}\n\nSpolu (bez poštovného): {total_eur} €\n\nProsím, pošli platbu na IBAN nižšie a do poznámky uveď číslo objednávky. Balík odošleme hneď, ako platbu dostaneme.\n\nIBAN: \n\nADACTA"
+    "body": "Ahoj {first_name}!\n\nĎakujeme za tvoju objednávku č. {order_no}.\n\n{items}\n\nTovar: {total_eur} € / {total_czk} Kč\nDoprava ({shipping_method}): {shipping_eur} € / {shipping_czk} Kč\nSpolu na úhradu: {grand_total_eur} € / {grand_total_czk} Kč\n\nProsím, pošli {grand_total_eur} € na IBAN nižšie a do poznámky uveď číslo objednávky. Balík odošleme hneď, ako platbu dostaneme.\n\nIBAN: {iban}\nSWIFT/BIC: {bic}\n\nADACTA"
   },
   "missing": {
     "label": "Missing item · EN",

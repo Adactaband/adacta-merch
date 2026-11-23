@@ -146,3 +146,17 @@ test('confirmation automatique : langue et variables', () => {
   assert.equal(renderTemplate('Ahoj {first_name}, č. {order_no}\n{items}\n{total_eur} € / {total_czk} Kč {x}', o, items, {}),
     'Ahoj Jana, č. 674\n- Raven T-Shirt (L) × 1 · 18 €\n- Beanie × 1 · 15 €\n33 € / 830 Kč {x}');
 });
+
+test('grille des frais de port pour le formulaire', () => {
+  const { shippingText, withShippingText } = require('../google-apps-script/Code.gs');
+  const rates = [{ carrier: 'packeta', country: 'SK', max_weight_g: 5000, price_eur: 4.5 }, { carrier: 'packeta', country: 'SK', max_weight_g: 1000, price_eur: 3.2 },
+                 { carrier: 'packeta', country: 'CZ', max_weight_g: 1000, price_eur: 3.9, price_czk: 95 }, { carrier: 'dpd', country: '*', max_weight_g: 2000, price_eur: 11 }];
+  const txt = shippingText(rates, [{ carrier: 'packeta', country: 'SK', price_eur: 1 }], []);
+  assert.match(txt, /Packeta SK : do \/ up to 1 kg 3,2 € · do \/ up to 5 kg 4,5 € · dobierka \/ cash on delivery \+1 €/);
+  assert.match(txt, /Packeta CZ : do \/ up to 1 kg 3,9 € \/ 95 Kč\n/);
+  assert.doesNotMatch(txt, /DPD/);
+  assert.match(txt, /Other countries: we calculate/);
+  const once = withShippingText('Vyber spôsob doručenia.', txt);
+  assert.equal(withShippingText(once, txt), once);
+  assert.ok(once.startsWith('Vyber spôsob doručenia.\n\n📦'));
+});
