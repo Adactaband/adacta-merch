@@ -1,5 +1,6 @@
 import { db, DEMO, computeView, effectiveCarrier } from './db.js';
 import { t, getLang, setLang, locale, LANGS } from './i18n.js';
+import { buildPdfHtml } from './pdf-export.js';
 
 // ---------------------------------------------------------------------
 // Constantes et utilitaires
@@ -237,6 +238,7 @@ async function pageOrders() {
     <div class="toolbar">
       <input id="q" type="search" placeholder="${t('list.search')}" value="${esc(state.filter.q)}">
       <a class="button ghost" href="#/nouvelle">${t('list.manual')}</a>
+      <button id="export-pdf" class="ghost" title="${t('pdf.btn_help')}">${t('pdf.btn')}</button>
       <button id="export" class="ghost">${t('list.export')}</button>
     </div>
     <div class="toolbar filters">
@@ -258,6 +260,7 @@ async function pageOrders() {
       <select id="bulk-status"><option value="">${t('list.bulk_status')}</option>${statusOptions('')}</select>
       <button id="bulk-paid" class="ghost">${t('list.bulk_paid')}</button>
       <select id="bulk-mail"><option value="">${t('list.bulk_mail')}</option>${Object.entries(templates).map(([k, tp]) => `<option value="${esc(k)}">${esc(tp.label || k)}</option>`).join('')}</select>
+      <button id="bulk-pdf" class="ghost">${t('pdf.btn_sel')}</button>
       <button id="bulk-clear" class="link">${t('list.bulk_clear')}</button>
     </div>
     <div class="table-wrap"><table class="orders">
@@ -273,6 +276,8 @@ async function pageOrders() {
   $$('.tile').forEach(b => b.onclick = () => { state.filter.status = b.dataset.status; state.selected.clear(); pageOrders(); });
   $('#q').oninput = e => { state.filter.q = e.target.value; drawRows(); };
   $('#export').onclick = exportCsv;
+  $('#export-pdf').onclick = () => exportPdf(filtered().map(o => o.id));
+  $('#bulk-pdf').onclick = () => exportPdf([...state.selected]);
   $('#check-all').onchange = e => { filtered().forEach(o => e.target.checked ? state.selected.add(o.id) : state.selected.delete(o.id)); drawRows(); };
   $('#bulk-clear').onclick = () => { state.selected.clear(); drawRows(); };
   $('#bulk-status').onchange = async e => {
@@ -327,6 +332,21 @@ function drawRows() {
       e.target.className = `row-status st-${st}`;
     };
   });
+}
+
+const payLabel = o => t((o.carrier || guessCarrier(o.shipping_method)) === 'main_propre' && isCod(o) ? 'pay.pickup' : isCod(o) ? 'pay.cod' : 'pay.prepaid');
+
+// Export PDF : s'ouvre dans un nouvel onglet, prêt à « Enregistrer au format PDF »
+async function exportPdf(ids) {
+  if (!ids.length) return toast(t('pdf.none'), 'error');
+  const w = window.open('', '_blank');
+  if (!w) return toast(t('pdf.popup'), 'error');
+  w.document.write(`<p style="font:14px system-ui;padding:20px">${esc(t('pdf.loading'))}</p>`);
+  try {
+    const [orders, items] = await Promise.all([db.ordersFull(ids), db.listItems(ids)]);
+    const html = buildPdfHtml(orders, items, { t, fmtDate, shipLabel, payLabel, statusLabel });
+    w.document.open(); w.document.write(html); w.document.close();
+  } catch (e) { w.close(); toast(e.message, 'error'); }
 }
 
 function exportCsv() {

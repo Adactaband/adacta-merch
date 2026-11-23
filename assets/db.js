@@ -161,6 +161,11 @@ const real = {
   async setItemPrepared(itemId, prepared) {
     check(await sb.from('order_items').update({ prepared }).eq('id', itemId));
   },
+  async ordersFull(ids) {
+    const out = [];
+    for (let i = 0; i < ids.length; i += 200) out.push(...check(await sb.from('orders_view').select('*').in('id', ids.slice(i, i + 200))));
+    return out;
+  },
   async listItems(orderIds) {
     const out = [];
     for (let i = 0; i < orderIds.length; i += 200) {
@@ -323,6 +328,7 @@ const demo = {
     });
   },
   async setItemPrepared(itemId, prepared) { store.items.find(i => i.id === itemId).prepared = prepared; },
+  async ordersFull(ids) { return store.orders.filter(o => ids.includes(o.id)).map(viewOf); },
   async listItems(orderIds) { return store.items.filter(i => orderIds.includes(i.order_id)); },
   async settings() { await loadDemoPhotos(); return structuredClone(store.settings); },
   async saveSetting(key, value) { store.settings[key] = value; },
