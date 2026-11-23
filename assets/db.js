@@ -30,7 +30,7 @@ const COUNTRY_RULES = [
   ['PL', /(poľsk|polsk|poland|^\s*pl\s*$)/i], ['DE', /(nemeck|němec|nemec|german|deutschland|^\s*de\s*$)/i],
   ['FR', /(franc|^\s*fr\s*$)/i]];
 export const countryCode = c => (COUNTRY_RULES.find(([, re]) => re.test(c || '')) || ['*'])[0];
-export const effectiveCarrier = o => o.carrier || (/dpd/i.test(o.shipping_method || '') ? 'dpd' : /packeta/i.test(o.shipping_method || '') ? 'packeta' : '');
+export const effectiveCarrier = o => o.carrier || (/osobn|odber|odovzd/i.test(o.shipping_method || '') ? 'main_propre' : /dpd/i.test(o.shipping_method || '') ? 'dpd' : /packeta/i.test(o.shipping_method || '') ? 'packeta' : '');
 
 /** Poids du colis et tarif de la grille Transport (identique à la vue SQL). */
 export function shippingQuote(o, items, ctx = {}) {
@@ -63,7 +63,7 @@ export function computeView(o, items, rules, ctx = {}) {
     country_code: q.country_code, weight_g: q.weight_g, weight_unknown: q.weight_unknown,
     shipping_eur_effective: +se, shipping_czk_effective: +sc,
     cod_effective: q.cod, cod_eur: q.cod_eur, cod_czk: q.cod_czk,
-    shipping_unknown: o.shipping_eur == null && !q.rate && o.carrier !== 'main_propre',
+    shipping_unknown: o.shipping_eur == null && !q.rate && effectiveCarrier(o) !== 'main_propre',
     grand_total_eur: sub + de + +se, grand_total_czk: subCzk + dc + +sc,
     items_count: items.reduce((a, i) => a + i.qty, 0),
     subtotal_eur: sub, subtotal_czk: subCzk,

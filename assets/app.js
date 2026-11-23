@@ -25,8 +25,10 @@ const fmtDate = (v, time = false) => v ? new Date(v).toLocaleString(locale(), ti
   : { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 const shortShipping = s => /dpd/i.test(s || '') ? 'DPD' : /packeta/i.test(s || '') ? 'Packeta' : (s || '—');
 // transporteur choisi dans la fiche, sinon celui du choix fait dans le formulaire
-const shipLabel = o => o.carrier ? carrierLabel(o.carrier) : shortShipping(o.shipping_method);
-const guessCarrier = s => /dpd/i.test(s || '') ? 'dpd' : /packeta/i.test(s || '') ? 'packeta' : '';
+const shipLabel = o => { const k = o.carrier || guessCarrier(o.shipping_method); return k ? carrierLabel(k) : shortShipping(o.shipping_method); };
+// transporteur déduit du texte du mode de livraison (« Osobný odber » → remise en main propre)
+const guessCarrier = s => /osobn|odber|odovzd|vyzdvihnutie na mieste/i.test(s || '') ? 'main_propre'
+  : /dpd/i.test(s || '') ? 'dpd' : /packeta|z-box|zasielkov/i.test(s || '') ? 'packeta' : '';
 const statusBadge = s => `<span class="badge st-${esc(s)}">${esc(statusLabel(s))}</span>`;
 const statusOptions = sel => STATUS_KEYS.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(statusLabel(k))}</option>`).join('');
 const orderLabel = o => o.order_no ? `N°${o.order_no}` : t('order_label_none', { id: o.id });
@@ -302,7 +304,7 @@ function drawRows() {
       <td class="num">${money(o.total_eur)} €${+o.shipping_eur_effective ? `<div class="small muted">${t('ship.plus', { amount: money(o.shipping_eur_effective) })}</div>` : ''}</td>
       <td class="pay-cell"><button class="pay-toggle ${o.paid ? 'on' : ''}" aria-pressed="${!!o.paid}"
           title="${t(o.paid ? 'pay.unmark' : 'pay.mark')}" aria-label="${t(o.paid ? 'pay.unmark' : 'pay.mark')}">${o.paid ? '✓' : ''}</button>
-        <span class="pay-how ${isCod(o) ? 'cod' : 'pre'}">${t(o.carrier === 'main_propre' && isCod(o) ? 'pay.pickup' : isCod(o) ? 'pay.cod' : 'pay.prepaid')}</span></td>
+        <span class="pay-how ${isCod(o) ? 'cod' : 'pre'}">${t((o.carrier || guessCarrier(o.shipping_method)) === 'main_propre' && isCod(o) ? 'pay.pickup' : isCod(o) ? 'pay.cod' : 'pay.prepaid')}</span></td>
       <td><select class="row-status st-${o.status}" aria-label="${t('col.status')}">${statusOptions(o.status)}</select></td>
     </tr>`).join('') || `<tr><td colspan="10" class="empty">${t('list.empty')}</td></tr>`;
   const tot = list.reduce((a, o) => a + (+o.total_eur || 0), 0);
@@ -618,6 +620,9 @@ async function pageOrder(id) {
   for (const f of ['#f-ship', '#f-customer']) $(f).onsubmit = async e => {
     e.preventDefault();
     const p = formPatch(e.target);
+    // mode de livraison modifié : le transporteur suit, sauf s'il a été choisi à la main
+    if ('shipping_method' in p && p.shipping_method !== o.shipping_method
+        && (!o.carrier || o.carrier === guessCarrier(o.shipping_method))) p.carrier = guessCarrier(p.shipping_method) || null;
     if (p.email) p.email = p.email.toLowerCase().trim();
     await guard(() => db.updateOrders([o.id], p), t('saved'));
     pageOrder(o.id);

@@ -15,7 +15,7 @@ const DICT = {
     'pay.mark': 'Označiť ako zaplatené', 'pay.unmark': 'Zrušiť „zaplatené“',
     'pay.marked': 'Objednávka {no} je zaplatená.', 'pay.unmarked': 'Objednávka {no} je znova nezaplatená.',
     'st.nevyzdvihnute': 'Nevyzdvihnutá', 'st.livree': 'Doručená / archív', 'st.annulee': 'Zrušená',
-    'carrier.main_propre': 'Osobné odovzdanie', 'carrier.autre': 'Iný',
+    'carrier.main_propre': 'Osobný odber', 'carrier.autre': 'Iný',
     'no_number': 'bez č.', 'order_label_none': 'bez č. (#{id})',
     // prihlásenie
     'login.title': 'Sledovanie objednávok', 'login.sub': 'Prístup len pre tím ADACTA.',
@@ -217,7 +217,7 @@ const DICT = {
     'pay.mark': 'Mark as paid', 'pay.unmark': 'Mark as not paid',
     'pay.marked': 'Order {no} is paid.', 'pay.unmarked': 'Order {no} is unpaid again.',
     'st.nevyzdvihnute': 'Not picked up', 'st.livree': 'Delivered / archived', 'st.annulee': 'Cancelled',
-    'carrier.main_propre': 'Hand delivery', 'carrier.autre': 'Other',
+    'carrier.main_propre': 'Pickup in person', 'carrier.autre': 'Other',
     'no_number': 'no No.', 'order_label_none': 'no No. (#{id})',
     'login.title': 'Order tracking', 'login.sub': 'Access for the ADACTA team only.',
     'login.email': 'Email address', 'login.placeholder': 'you@example.com', 'login.send': 'Send me a sign-in link',

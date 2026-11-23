@@ -300,7 +300,8 @@ cross join lateral (
   -- paiement : SK / CZ = dobierka, autres pays = platba vopred (sauf choix manuel sur la commande)
   select coalesce(o.cod, coalesce(o.shipping_method, '') ~* '(dobierk|cash on delivery|\mcod\M)'
                          or public.country_code(o.country) in ('SK', 'CZ')) as cod,
-         coalesce(nullif(o.carrier, ''), case when o.shipping_method ilike '%dpd%' then 'dpd'
+         coalesce(nullif(o.carrier, ''), case when o.shipping_method ~* '(osobn|odber|odovzd)' then 'main_propre'
+                                              when o.shipping_method ilike '%dpd%' then 'dpd'
                                               when o.shipping_method ilike '%packeta%' then 'packeta' end) as carrier
 ) k
 left join lateral (
