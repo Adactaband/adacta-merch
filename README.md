@@ -40,7 +40,7 @@ Statuts : **Non traitée → En préparation → Emballée → Envoyée → Livr
 
 **En-tête du formulaire** : dans Katalóg → « Hlavička Google formulára », on modifie le **titre** et la **description** du formulaire ; le script les applique en moins d'une minute. L'image d'en-tête est affichée, mais Google ne permet pas de la changer par script : elle se change dans l'éditeur du formulaire (Thème).
 
-**Photos** : stockées dans Supabase Storage (bucket public `product-photos`, créé par `schema.sql`), réduites à 1200 px avant l'envoi. Tout le monde peut voir une photo par son lien ; seules les personnes autorisées peuvent en ajouter ou en retirer.
+**Photos** : stockées dans Supabase Storage (bucket public `product-photos`, créé par `schema.sql`), réduites à 1200 px avant l'envoi. Tout le monde peut voir une photo par son lien ; seuls les admins peuvent en ajouter ou en retirer.
 
 **Tailles** : S, M, L, XL, XXL, 3XL, 4XL et Unisize. Les tailles du formulaire sont normalisées à l'import (XXXL → 3XL, XXXXL → 4XL, « one size » → Unisize). La coupe Girly s'écrit « Girly M » dans les commandes et dans le formulaire. À l'import, le type de chaque article est deviné d'après son nom (LP, Patch, T-shirt…), et il est classé textile s'il a des tailles.
 
@@ -82,6 +82,10 @@ Après le premier import du script (étape 3), exécute [`supabase/catalog_from_
 ### 1 ter. Mails avec transport et total (mise à jour du 23.11)
 
 Exécute [`supabase/update_email_templates.sql`](supabase/update_email_templates.sql) : la confirmation (SK/CZ) et la demande de paiement affichent le transport et le total à payer ; la confirmation EN (autres pays) annonce que le port sera calculé. Saisis l'IBAN et le SWIFT/BIC dans **Nastavenia → Bankové údaje** (variables `{iban}` et `{bic}`).
+
+### 1 quater. Katalóg réservé aux admins (mise à jour du 26.11)
+
+Exécute [`supabase/admin_catalog.sql`](supabase/admin_catalog.sql) : les membres consultent toujours le Katalóg (articles, catégories, photos), mais seuls les admins peuvent créer, modifier ou supprimer des articles, des catégories, des photos et des types d'article, modifier l'en-tête du Google Form et y publier le catalogue. La base refuse ces modifications aux membres, et le site masque les boutons correspondants. Le script Google n'est pas concerné. Le rôle de chacun se règle dans **Nastavenia → Povolené osoby**.
 
 ### 2. GitHub Pages : le site
 

@@ -30,6 +30,14 @@ language sql stable security definer set search_path = public as $$
                  where email = public.current_email() and role = 'admin')
 $$;
 
+-- Appel du script Google (clé secret = service_role) ou du SQL Editor / psql (aucun jeton) ;
+-- dans une fonction security definer, current_user vaut toujours le propriétaire (postgres) :
+-- il ne permet pas de reconnaître l'appelant.
+create or replace function public.is_backend() returns boolean
+language sql stable as $$
+  select coalesce(auth.role(), '') = 'service_role' or coalesce(auth.jwt(), '{}'::jsonb) = '{}'::jsonb
+$$;
+
 -- ---------------------------------------------------------------------
 -- 2. Commandes
 -- ---------------------------------------------------------------------
@@ -405,8 +413,7 @@ declare
   it jsonb;
   n integer := 0;
 begin
-  if not (public.is_allowed() or coalesce(auth.role(), '') = 'service_role'
-          or current_user in ('postgres', 'service_role')) then
+  if not (public.is_allowed() or public.is_backend()) then
     raise exception 'accès refusé';
   end if;
 
@@ -487,8 +494,7 @@ returns integer
 language plpgsql security definer set search_path = public as $$
 declare it jsonb; n integer := 0;
 begin
-  if not (public.is_allowed() or coalesce(auth.role(), '') = 'service_role'
-          or current_user in ('postgres', 'service_role')) then
+  if not (public.is_admin() or public.is_backend()) then
     raise exception 'accès refusé';
   end if;
   for it in select * from jsonb_array_elements(p) loop
@@ -521,8 +527,7 @@ returns bigint
 language plpgsql security definer set search_path = public as $$
 declare v_id bigint;
 begin
-  if not (public.is_allowed() or coalesce(auth.role(), '') = 'service_role'
-          or current_user in ('postgres', 'service_role')) then
+  if not (public.is_allowed() or public.is_backend()) then
     raise exception 'accès refusé';
   end if;
   if exists (select 1 from orders where order_no = p_order_no) then
@@ -558,12 +563,43 @@ do $$
 declare t text;
 begin
   foreach t in array array['orders', 'order_items', 'status_history', 'email_outbox',
-                           'sync_requests', 'settings', 'products', 'shipping_rates', 'categories', 'cod_fees'] loop
+                           'shipping_rates', 'cod_fees'] loop
     execute format('drop policy if exists team_all on public.%I', t);
     execute format('create policy team_all on public.%I for all to authenticated
                     using (public.is_allowed()) with check (public.is_allowed())', t);
   end loop;
+  -- Katalóg (articles, catégories) : toute l'équipe le consulte, seuls les admins le modifient
+  foreach t in array array['products', 'categories'] loop
+    execute format('drop policy if exists team_all on public.%I', t);
+    execute format('drop policy if exists team_read on public.%I', t);
+    execute format('drop policy if exists admin_write on public.%I', t);
+    execute format('create policy team_read on public.%I for select to authenticated using (public.is_allowed())', t);
+    execute format('create policy admin_write on public.%I for all to authenticated
+                    using (public.is_admin()) with check (public.is_admin())', t);
+  end loop;
 end $$;
+
+-- Réglages : les types d'article (Katalóg) et le Google Form sont réservés aux admins
+drop policy if exists team_all on public.settings;
+drop policy if exists team_read on public.settings;
+drop policy if exists team_write on public.settings;
+create policy team_read on public.settings for select to authenticated using (public.is_allowed());
+create policy team_write on public.settings for all to authenticated
+  using (public.is_admin() or (public.is_allowed() and key not in ('product_types', 'google_form')))
+  with check (public.is_admin() or (public.is_allowed() and key not in ('product_types', 'google_form')));
+
+-- Demandes au script Google : « sync » pour toute l'équipe, publication dans le Google Form pour les admins
+drop policy if exists team_all on public.sync_requests;
+drop policy if exists team_read on public.sync_requests;
+drop policy if exists team_insert on public.sync_requests;
+drop policy if exists team_update on public.sync_requests;
+drop policy if exists team_delete on public.sync_requests;
+create policy team_read on public.sync_requests for select to authenticated using (public.is_allowed());
+create policy team_insert on public.sync_requests for insert to authenticated
+  with check (public.is_allowed() and (kind = 'sync' or public.is_admin()));
+create policy team_update on public.sync_requests for update to authenticated
+  using (public.is_allowed()) with check (public.is_allowed() and (kind = 'sync' or public.is_admin()));
+create policy team_delete on public.sync_requests for delete to authenticated using (public.is_allowed());
 
 drop policy if exists allowed_read on public.allowed_emails;
 create policy allowed_read on public.allowed_emails for select to authenticated
@@ -586,6 +622,7 @@ grant all on all sequences in schema public to service_role;
 grant execute on function public.import_order(jsonb) to authenticated, service_role;
 grant execute on function public.assign_order_no(integer, text, timestamptz, text) to authenticated, service_role;
 grant execute on function public.is_allowed(), public.is_admin(), public.current_email() to authenticated, anon;
+grant execute on function public.is_backend() to authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- 8. Réglages par défaut (modifiables ensuite dans l'onglet Réglages)
@@ -714,7 +751,7 @@ begin
 end $$;
 
 -- Photos : bucket public « product-photos » de Supabase Storage. Tout le monde peut voir
--- une photo (lien), seules les personnes autorisées peuvent en ajouter ou en retirer.
+-- une photo (lien), seuls les admins peuvent en ajouter ou en retirer.
 do $$
 begin
   if not exists (select 1 from pg_namespace where nspname = 'storage') then return; end if;
@@ -723,8 +760,8 @@ begin
   on conflict (id) do nothing;
   execute 'drop policy if exists product_photos_write on storage.objects';
   execute $p$create policy product_photos_write on storage.objects for all to authenticated
-           using (bucket_id = 'product-photos' and public.is_allowed())
-           with check (bucket_id = 'product-photos' and public.is_allowed())$p$;
+           using (bucket_id = 'product-photos' and public.is_admin())
+           with check (bucket_id = 'product-photos' and public.is_admin())$p$;
 end $$;
 
 -- Statut « Nevyzdvihnuté » (colis non retiré) : mise à jour de la contrainte sur une base existante

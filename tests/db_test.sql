@@ -35,5 +35,42 @@ update orders set status = 'emballee' where source_key = 't1';
 do $$ begin
   assert (select changed_by from status_history where new_status = 'emballee' limit 1) = 'membre@test.cz', 'historique';
 end $$;
+-- Katalóg : les membres le consultent sans le modifier, les admins le modifient
+reset role;
+insert into products(name, price_eur) values ('Test patch', 5) on conflict do nothing;
+set role authenticated;
+set request.jwt.claims = '{"email":"membre@test.cz"}';
+do $$ begin
+  assert (select count(*) from products) > 0, 'un membre ne voit pas le catalogue';
+  assert (select count(*) from categories) > 0, 'un membre ne voit pas les catégories';
+end $$;
+update products set price_eur = 99 where name = 'Test patch';
+delete from categories;
+do $$ begin
+  assert (select price_eur from products where name = 'Test patch') = 5, 'un membre a modifié un article';
+  assert (select count(*) from categories) > 0, 'un membre a supprimé des catégories';
+  begin insert into products(name) values ('Intrus'); assert false, 'un membre a créé un article';
+  exception when insufficient_privilege then null; end;
+  begin insert into categories(name, position) values ('Intrus', 9); assert false, 'un membre a créé une catégorie';
+  exception when insufficient_privilege then null; end;
+  begin perform import_products('[{"name":"Intrus 2"}]'::jsonb); assert false, 'un membre a importé des articles';
+  exception when raise_exception then null; end;
+  begin insert into settings(key, value) values ('product_types', '[]') on conflict (key) do update set value = excluded.value;
+    assert false, 'un membre a modifié les types d''article';
+  exception when insufficient_privilege then null; end;
+  begin insert into sync_requests(kind) values ('form_publish'); assert false, 'un membre a publié le Google Form';
+  exception when insufficient_privilege then null; end;
+end $$;
+insert into sync_requests(kind) values ('sync');                                      -- la synchro reste ouverte aux membres
+insert into settings(key, value) values ('bank', '{"iban":"x"}') on conflict (key) do update set value = excluded.value;
+set request.jwt.claims = '{"email":"admin@test.cz"}';
+update products set price_eur = 6 where name = 'Test patch';
+insert into categories(name, position) values ('Admin test', 9);
+insert into sync_requests(kind) values ('form_preview');
+update settings set value = '[]' where key = 'product_types';
+do $$ begin
+  assert (select price_eur from products where name = 'Test patch') = 6, 'un admin ne peut pas modifier un article';
+  assert import_products('[{"name":"Admin import t-shirt","sizes":["M"]}]'::jsonb) = 1, 'un admin ne peut pas importer';
+end $$;
 reset role;
 select 'TOUS LES TESTS SQL PASSENT' as resultat;
