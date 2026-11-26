@@ -934,12 +934,14 @@ async function pageCatalog() {
   state.settings = await db.settings();
   const f = state.catFilter ||= { q: '', cat: '', type: '', textile: '', inactive: false };
   const gf = state.settings.google_form || {};
+  // seuls les admins modifient le Katalóg (la base le refuse aussi aux membres)
+  const isAdmin = state.me?.role === 'admin';
   $('#app').innerHTML = `
-    <header class="order-head"><div><h1>${t('cat.title')}</h1><p class="muted narrow-text">${t('cat.help')}</p></div>
+    <header class="order-head"><div><h1>${t('cat.title')}</h1><p class="muted narrow-text">${isAdmin ? t('cat.help') : t('cat.readonly')}</p></div>
       <div class="head-actions">${state.settings.google_form?.view_url ? `<a class="button" href="${esc(state.settings.google_form.view_url)}" target="_blank" rel="noopener">${t('cat.open_form')} ↗</a>` : ''}
-        ${state.settings.google_form?.edit_url ? `<a class="button" href="${esc(state.settings.google_form.edit_url)}" target="_blank" rel="noopener">${t('cat.edit_form')} ↗</a>` : ''}
-        <button id="cat-add" class="primary">${t('cat.add')}</button>
-        <button id="cat-form" class="ghost">${t('cat.form_btn')}</button></div></header>
+        ${isAdmin && state.settings.google_form?.edit_url ? `<a class="button" href="${esc(state.settings.google_form.edit_url)}" target="_blank" rel="noopener">${t('cat.edit_form')} ↗</a>` : ''}
+        ${isAdmin ? `<button id="cat-add" class="primary">${t('cat.add')}</button>
+        <button id="cat-form" class="ghost">${t('cat.form_btn')}</button>` : ''}</div></header>
     <div class="toolbar cat-toolbar">
       <input id="cat-q" type="search" placeholder="${t('cat.search')}" value="${esc(f.q)}" aria-label="${t('cat.search')}">
       <select id="cat-type" aria-label="${t('cat.type')}"><option value="">${t('cat.all_types')}</option>
@@ -949,25 +951,25 @@ async function pageCatalog() {
           `<button data-tx="${v}" class="${f.textile === v ? 'on' : ''}">${t(k)}</button>`).join('')}</span>
       <label class="chip"><input type="checkbox" id="cat-inactive" ${f.inactive ? 'checked' : ''}> ${t('cat.show_inactive')}</label>
     </div>
-    <details class="card" id="form-head"><summary><h2>${t('cat.form_header')}</h2></summary>
+    ${isAdmin ? `<details class="card" id="form-head"><summary><h2>${t('cat.form_header')}</h2></summary>
       <div class="form-head">
         ${gf.header_image ? `<img class="form-banner" src="${esc(gf.header_image)}" alt="${t('cat.header_image')}">` : ''}
         <p class="small muted">${t('cat.header_image_note')}${gf.edit_url ? ` <a href="${esc(gf.edit_url)}" target="_blank" rel="noopener">${t('cat.edit_form')} ↗</a>` : ''}</p>
         <label>${t('cat.form_title_label')}<input id="fh-title" value="${esc(gf.title ?? '')}" maxlength="200"></label>
         <label>${t('cat.form_desc_label')}<textarea id="fh-desc" rows="6" placeholder="${t('cat.form_desc_ph')}">${esc(gf.description ?? '')}</textarea></label>
         <div><button id="fh-save" class="primary">${t('cat.form_header_save')}</button></div>
-      </div></details>
+      </div></details>` : ''}
     <p id="cat-warn" class="notice" hidden></p>
     <div class="cat-layout">
       <nav id="cat-nav" class="card" aria-label="${t('cat.categories')}"></nav>
       <div id="cat-lists"></div>
     </div>
-    <details class="card" id="cat-admin"><summary><h2>${t('cat.manage')}</h2></summary>
+    ${isAdmin ? `<details class="card" id="cat-admin"><summary><h2>${t('cat.manage')}</h2></summary>
       <div class="admin-grid"><div><h3>${t('cat.categories')}</h3><p class="small muted">${t('cat.cat_help')}</p>
         <div id="cat-tree"></div><button id="cat-root" class="ghost">${t('cat.add_root')}</button></div>
       <div><h3>${t('cat.types')}</h3><p class="small muted">${t('cat.types_help')}</p>
         <div id="type-list"></div><button id="type-add" class="ghost">${t('cat.add_type')}</button>
-        <button id="type-save" class="primary">${t('cat.save_types')}</button></div></div></details>`;
+        <button id="type-save" class="primary">${t('cat.save_types')}</button></div></div></details>` : ''}`;
 
   const collapsed = state.catCollapsed ||= new Set();
   const draw = () => {
@@ -995,7 +997,7 @@ async function pageCatalog() {
     $$('#cat-nav .nav-cat').forEach(b => b.onclick = () => { f.cat = b.dataset.cat; draw(); $('#cat-lists').scrollIntoView({ block: 'nearest' }); });
 
     // --- articles groupés : catégorie › sous-catégorie › sous-sous-catégorie
-    const row = p => `<tr data-id="${p.id}" class="clickable ${p.active ? '' : 'inactive'}" tabindex="0">
+    const row = p => `<tr data-id="${p.id}" class="${isAdmin || p.photos?.length ? 'clickable' : ''} ${p.active ? '' : 'inactive'}" ${isAdmin || p.photos?.length ? 'tabindex="0"' : ''}>
         <td class="thumb-cell">${p.photos?.length ? `<button class="zoom" title="${t('cat.zoom')}" aria-label="${t('cat.zoom')} : ${esc(p.name)}">${thumb(p)}${p.photos.length > 1 ? `<span class="zoom-n">${p.photos.length}</span>` : ''}</button>` : thumb(p)}</td>
         <td><strong>${esc(p.name)}</strong><div class="small muted">${p.type ? `<span class="type-tag">${esc(p.type)}</span> · ` : ''}${t(p.textile ? 'cat.textile' : 'cat.non_textile')}${p.from_form ? ` · ${t('cat.form')}` : ''}</div></td>
         <td class="small">${p.textile ? sizeChips(p) : '<span class="muted">—</span>'}</td>
@@ -1025,10 +1027,12 @@ async function pageCatalog() {
       if (d.open) collapsed.delete(k); else collapsed.add(k);
     });
     const noWeight = state.products.filter(p => p.active && p.weight_g == null).length;
-    $('#cat-warn').hidden = !noWeight;
+    $('#cat-warn').hidden = !noWeight || !isAdmin;
     $('#cat-warn').textContent = t('cat.no_weight', { n: noWeight });
     $$('#cat-lists tr[data-id]').forEach(tr => {
-      const open = () => productEditor(state.products.find(p => p.id === +tr.dataset.id), pageCatalog);
+      const prod = state.products.find(p => p.id === +tr.dataset.id);
+      // membre : la ligne ouvre seulement les photos, pas la fiche de modification
+      const open = () => isAdmin ? productEditor(prod, pageCatalog) : lightbox(prod);
       tr.onclick = open; tr.onkeydown = e => { if (e.key === 'Enter' && e.target === tr) open(); };
       const z = $('.zoom', tr);
       if (z) z.onclick = e => { e.stopPropagation(); lightbox(state.products.find(p => p.id === +tr.dataset.id)); };
@@ -1038,6 +1042,7 @@ async function pageCatalog() {
   $('#cat-type').onchange = e => { f.type = e.target.value; draw(); };
   $$('.seg button').forEach(b => b.onclick = () => { f.textile = b.dataset.tx; $$('.seg button').forEach(x => x.classList.toggle('on', x === b)); draw(); });
   $('#cat-inactive').onchange = e => { f.inactive = e.target.checked; draw(); };
+  if (!isAdmin) return draw();
   $('#cat-add').onclick = () => productEditor(null, pageCatalog);
   $('#fh-save').onclick = async () => {
     const title = $('#fh-title').value.trim();
